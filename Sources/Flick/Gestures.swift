@@ -1,7 +1,8 @@
 import Cocoa
 
-/// Takes the three finger vertical swipe before the Dock sees it. No tap exists until
-/// the option is first turned on, because this one sees every trackpad gesture.
+/// Takes trackpad swipes before the Dock sees them: three fingers up for the Spaces
+/// grid, and the sideways swipe between Spaces for Instant Spaces. No tap exists until
+/// one of those is on, because this one sees every trackpad gesture.
 /// The approach comes from InstantSpaceSwitcher's swipe override by jurplel (MIT).
 final class GestureTap: Thread {
     static let shared = GestureTap()
@@ -13,6 +14,8 @@ final class GestureTap: Thread {
     private enum Mode { case idle, undecided, opening, closing, swallow }
     // Tap thread only.
     private var mode = Mode.idle
+    private var sideways = false           // a sideways swipe we've taken
+    private var sidewaysFired = false
     private var up = 1
     private var level = 0.0                // how open the grid is, 0 to 1
     private var recent: [(level: Double, time: UInt64)] = []
@@ -26,8 +29,10 @@ final class GestureTap: Thread {
     private static let kind: UInt32 = 55, source: UInt32 = 41, hidType: UInt32 = 110, motion: UInt32 = 123
     private static let progress: UInt32 = 124, velocityX: UInt32 = 129, velocityY: UInt32 = 130, phase: UInt32 = 132
 
+    var isEnabled: Bool { tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false }
+
     func apply() {
-        let on = Prefs.current.swipeUp && KeyTap.shared.isRunning
+        let on = (Prefs.current.swipeUp || Prefs.current.instantSpaces) && KeyTap.shared.isRunning
         if on, !began {
             began = true
             name = "flick.gestures"
@@ -54,7 +59,7 @@ final class GestureTap: Thread {
     private func handle(_ proxy: CGEventTapProxy, _ type: UInt32, _ event: CGEvent) -> Unmanaged<CGEvent>? {
         let pass = Unmanaged.passUnretained(event)
         if type == CGEventType.tapDisabledByTimeout.rawValue || type == CGEventType.tapDisabledByUserInput.rawValue {
-            if let tap, Prefs.current.swipeUp { CGEvent.tapEnable(tap: tap, enable: true) }
+            if let tap, Prefs.current.swipeUp || Prefs.current.instantSpaces { CGEvent.tapEnable(tap: tap, enable: true) }
             return pass
         }
         guard let get = Priv.getI, let getD = Priv.getD else { return pass }
@@ -62,8 +67,11 @@ final class GestureTap: Thread {
         guard kind == Self.gesture || kind == Self.dockControl else { return pass }
         // A real trackpad has no process. Anything else is software, like a Space jump.
         guard acceptPosted || get(event, Self.source) == 0 else { return pass }
-        if kind == Self.gesture { return mode == .idle ? pass : nil }
-        guard get(event, Self.hidType) == 23, get(event, Self.motion) == 2 else { return pass }
+        if kind == Self.gesture { return mode == .idle && !sideways ? pass : nil }
+        guard get(event, Self.hidType) == 23 else { return pass }
+        let motion = get(event, Self.motion)
+        if motion == 1 || sideways { return across(event, phase: get(event, Self.phase), getD) }
+        guard motion == 2, Prefs.current.swipeUp || mode != .idle else { return pass }
 
         switch get(event, Self.phase) {
         case 1:
@@ -106,6 +114,55 @@ final class GestureTap: Thread {
         default:
             return mode == .idle ? pass : nil
         }
+    }
+
+    /// Instant Spaces: the sideways swipe between Spaces, taken whole. The first sign of
+    /// a direction jumps straight to the Space beside this one, as InstantSpaceSwitcher
+    /// does, so there's no slide to wait for.
+    private func across(_ event: CGEvent, phase: Int64, _ getD: @convention(c) (CGEvent, UInt32) -> Double) -> Unmanaged<CGEvent>? {
+        let pass = Unmanaged.passUnretained(event)
+        // Flick's own swipes, from a jump to a full-screen Space.
+        if Spaces.isPosting { return pass }
+        switch phase {
+        case 1:
+            guard Prefs.current.instantSpaces, !Switcher.shared.isActive else { return pass }
+            sideways = true
+            sidewaysFired = false
+            return nil
+        case 2:
+            guard sideways else { return pass }
+            if !sidewaysFired {
+                let value = getD(event, Self.progress)
+                if value != 0 { step(value) }
+            }
+            return nil
+        case 4:
+            guard sideways else { return pass }
+            if !sidewaysFired {
+                let value = getD(event, Self.velocityX)
+                if value != 0 { step(value) }
+            }
+            sideways = false
+            sidewaysFired = false
+            // The Dock needs the end to close its gesture, with nothing left to act on.
+            if let set = Priv.setD {
+                for field in [Self.progress, Self.velocityX, Self.velocityY] { set(event, field, 0) }
+            }
+            return pass
+        case 8:
+            guard sideways else { return pass }
+            sideways = false
+            sidewaysFired = false
+            return nil
+        default:
+            return sideways ? nil : pass
+        }
+    }
+
+    private func step(_ value: Double) {
+        sidewaysFired = true
+        Log.write("instant spaces: swipe \(value > 0 ? "right" : "left")")
+        Focuser.step(value > 0 ? 1 : -1)
     }
 
     /// Which sign means up isn't documented, so the first swipe after turning this on

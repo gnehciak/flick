@@ -371,6 +371,49 @@ final class SelfTest {
     }
 
     /// Vertical Dock swipes through the tap. Ends with Esc, so focus stays put.
+    /// Instant Spaces with made-up sideways swipes. Records where each would jump
+    /// instead of jumping, so the screen stays put.
+    private func instantTest() {
+        let lock = NSLock()
+        var steps: [(Int, UInt64?)] = []
+        Focuser.dryRun = { delta, target in lock.lock(); steps.append((delta, target)); lock.unlock() }
+        defer { Focuser.dryRun = nil }
+        let d = UserDefaults.standard
+        func taken() -> [(Int, UInt64?)] {
+            usleep(350_000)
+            lock.lock(); defer { steps = []; lock.unlock() }
+            return steps
+        }
+        func describe(_ s: [(Int, UInt64?)]) -> String {
+            s.isEmpty ? "nothing" : s.map { "\($0.0 > 0 ? "right" : "left") to \($0.1.map(String.init) ?? "none (edge)")" }.joined(separator: ", ")
+        }
+        let display = Spaces.displays().first { $0.id == Priv.displayUnderCursor() } ?? Spaces.displays().first
+        let index = display.flatMap { $0.spaces.firstIndex(of: $0.current) } ?? -1
+        say("on Space \(index + 1) of \(display?.spaces.count ?? 0) under the pointer")
+        d.set(true, forKey: "instantSpaces")
+        d.set(false, forKey: "swipeUp")
+        usleep(400_000)
+        say("tap on with only Instant Spaces: \(Prefs.current.instantSpaces && !Prefs.current.swipeUp)")
+        Spaces.postHorizontal(sign: 1)
+        say("swipe with positive progress: \(describe(taken()))")
+        Spaces.postHorizontal(sign: -1)
+        say("swipe with negative progress: \(describe(taken()))")
+        Spaces.postHorizontal(sign: 1, amounts: [])
+        say("quick flick, speed only: \(describe(taken()))")
+        Spaces.postHorizontal(sign: 1, amounts: [0.02, 0.08, 0.3, 0.6, 0.9])
+        say("a long swipe still moves one Space: \(describe(taken()))")
+        // Anything not taken goes on to macOS, so nothing here is left untaken on purpose.
+        d.set(false, forKey: "instantSpaces")
+        usleep(400_000)
+        say("both off, the tap is off too: \(!GestureTap.shared.isEnabled)")
+        d.set(true, forKey: "instantSpaces")
+        usleep(400_000)
+        say("on again: \(GestureTap.shared.isEnabled)")
+        let now = Spaces.displays().first { $0.id == display?.id }?.current
+        say("still on the same Space: \(now == display?.current)")
+        if let original = display?.current, now != original { Spaces.jump(to: original) }
+    }
+
     private func swipeTest() {
         let d = UserDefaults.standard
         let learned = d.object(forKey: "swipeSign")
@@ -1178,6 +1221,7 @@ final class SelfTest {
         if let fixture = ProcessInfo.processInfo.environment["FLICK_MOVETEST"] { moveTest(fixture); return }
         if ProcessInfo.processInfo.environment["FLICK_REDUCEDTEST"] != nil { reducedTest(); return }
         if ProcessInfo.processInfo.environment["FLICK_SWIPETEST"] != nil { swipeTest(); return }
+        if ProcessInfo.processInfo.environment["FLICK_INSTANTTEST"] != nil { instantTest(); return }
         if let prefix = ProcessInfo.processInfo.environment["FLICK_OPENTEST"] { openTest(prefix); return }
         if ProcessInfo.processInfo.environment["FLICK_BENCH"] != nil {
             sleep(4)

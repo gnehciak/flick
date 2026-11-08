@@ -47,7 +47,7 @@ Menu bar icon > Settings, or open Flick from Applications. Changes apply straigh
 - **General:** the shortcut (⌘, ⌥ or ⌃ Tab; with ⌥ or ⌃ the system ⌘Tab stays on), the delay before the switcher shows, Early Switch, Open at Login and the menu bar icon. It also shows whether Accessibility and Screen Recording are allowed, with a button to each in System Settings.
 - **Appearance:** a miniature switcher with your own windows on your wallpaper, which follows glass, tint, highlight, size and corners as you change them. Window previews, titles, app icons, and which display it shows on.
 - **Windows:** what ⌘Tab shows, the current Space or all Spaces as a grid. S in the switcher flips between them for one time. Minimized windows, hidden apps and ignored apps.
-- **Spaces:** your Spaces as the grid lays them out, with their names and apps. Organise… names, reorders and hides them and sets the columns. Reduced Motion fades the grid instead of zooming, and also follows System Settings. In the grid, drag a tile onto another Space to move the window there (macOS 27 and later, same display).
+- **Spaces:** your Spaces as the grid lays them out, with their names and apps. Organise… names, reorders and hides them and sets the columns. Reduced Motion fades the grid instead of zooming, and also follows System Settings. Instant Spaces, on by default, takes the system's sideways swipe between Spaces and jumps straight to the next one with no slide, as InstantSpaceSwitcher does; it warns if InstantSpaceSwitcher is also running. In the grid, drag a tile onto another Space to move the window there (macOS 27 and later, same display).
 - **Gestures:** Three Finger Switch swipes sideways through windows, as on Windows: keep the fingers down to choose, lift to switch, add a fourth finger to cancel. Its preview marks where each step lands at the chosen sensitivity, and higher sensitivity means less finger travel. Swipe Up for Spaces opens the grid with three fingers up instead of Mission Control, following your fingers, and down closes it. The tab warns when the system's own trackpad gestures would get in the way.
 - **About:** the version, Buy Me a Coffee and the source code, the keys in the switcher, Reset All Settings and Quit.
 
@@ -107,6 +107,7 @@ Flick turns the system ⌘Tab off while it runs and restores it on quit, on sign
 | `FLICK_SELFTEST=<report> FLICK_SPACESTEST=1 FLICK_ALLSPACES=1` | Spaces view layout and arrows. Focus stays put. |
 | `FLICK_SELFTEST=<report> FLICK_FLIPTEST=1` | The S key, with real keys. Focus stays put. |
 | `FLICK_SELFTEST=<report> FLICK_SWIPETEST=1` | Vertical swipes through the tap. Focus stays put. |
+| `FLICK_SELFTEST=<report> FLICK_INSTANTTEST=1` | Instant Spaces with made-up sideways swipes, recording where each would go without jumping. Focus stays put. |
 | `FLICK_SELFTEST=<report> FLICK_OPENTEST=<prefix>` | The swipe's opening animation. Add `FLICK_SLOWOPEN=<n>` for frames. Focus stays put. |
 | `FLICK_SELFTEST=<report> FLICK_REDUCEDTEST=1` | Reduced Motion. Focus stays put. |
 | `FLICK_SELFTEST=<report> FLICK_MOVETEST=<fixture>` | Drags a throwaway window between Spaces. Focus stays put. |

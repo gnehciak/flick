@@ -581,3 +581,70 @@ struct UpPreview: View {
         return CGRect(x: rect.midX - w / 2, y: rect.midY - h / 2, width: w, height: h)
     }
 }
+
+/// Fingers sliding sideways, and the next Space there at once: no slide in between.
+struct InstantPreview: View {
+    @ObservedObject private var wallpaper = Wallpaper.shared
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
+            Canvas { context, size in
+                draw(&context, size, time: reduceMotion ? 1.6 : timeline.date.timeIntervalSinceReferenceDate)
+            }
+        }
+        .frame(height: 130)
+        .onAppear { Wallpaper.shared.load() }
+        .accessibilityLabel("Fingers swipe sideways and the next Space appears at once, with no slide")
+    }
+
+    private func draw(_ context: inout GraphicsContext, _ size: CGSize, time: Double) {
+        let cycle = 3.2
+        let p = time.truncatingRemainder(dividingBy: cycle)
+        // Fingers travel left during the first half; the Space changes as soon as they move.
+        let half = cycle / 2
+        let leg = p < half ? p : p - half
+        let moved: Double = leg < 0.25 ? 0 : min(1, (leg - 0.25) / 0.7)
+        let down = leg < 1.1
+        let second = (p >= half) != (moved > 0.08)   // which Space is showing
+        let ink = Color.primary
+
+        let padW: CGFloat = 150, padH: CGFloat = 96, screenW: CGFloat = 176, screenH: CGFloat = 110, gap: CGFloat = 36
+        let left = (size.width - padW - gap - screenW) / 2
+        let pad = CGRect(x: left, y: (size.height - padH) / 2, width: padW, height: padH)
+        context.fill(Path(roundedRect: pad, cornerRadius: 11), with: .color(ink.opacity(0.06)))
+        context.stroke(Path(roundedRect: pad, cornerRadius: 11), with: .color(ink.opacity(0.18)), lineWidth: 1)
+        // Alternate directions, so it shows going both ways.
+        let towardsLeft = p < half
+        let cx = pad.midX + CGFloat(towardsLeft ? 1 - 2 * moved : -1 + 2 * moved) * 30
+        for (i, dy) in [6.0, 0.0, 2.0, 9.0].enumerated() {
+            let r = CGRect(x: cx + CGFloat(i) * 18 - 34, y: pad.midY + CGFloat(dy) - 9, width: 17, height: 17)
+            context.fill(Path(ellipseIn: r), with: .color(ink.opacity(down ? 0.28 : 0)))
+            context.stroke(Path(ellipseIn: r), with: .color(ink.opacity(down ? 0.4 : 0)), lineWidth: 1)
+        }
+
+        let screen = CGRect(x: pad.maxX + gap, y: (size.height - screenH) / 2, width: screenW, height: screenH)
+        let shape = Path(roundedRect: screen, cornerRadius: 6)
+        context.drawLayer { layer in
+            layer.clip(to: shape)
+            if let plain = wallpaper.plain {
+                let scale = max(screen.width / CGFloat(plain.width), screen.height / CGFloat(plain.height))
+                let w = CGFloat(plain.width) * scale, h = CGFloat(plain.height) * scale
+                layer.draw(Image(decorative: plain, scale: 1).resizable(), in: CGRect(x: screen.midX - w / 2, y: screen.midY - h / 2, width: w, height: h))
+            } else {
+                layer.fill(shape, with: .color(.gray))
+            }
+            let windows: [CGRect] = second
+                ? [CGRect(x: 0.52, y: 0.18, width: 0.4, height: 0.5), CGRect(x: 0.1, y: 0.4, width: 0.36, height: 0.45)]
+                : [CGRect(x: 0.08, y: 0.14, width: 0.5, height: 0.56), CGRect(x: 0.42, y: 0.42, width: 0.48, height: 0.44)]
+            for w in windows {
+                let r = CGRect(x: screen.minX + w.minX * screen.width, y: screen.minY + w.minY * screen.height,
+                               width: w.width * screen.width, height: w.height * screen.height)
+                layer.fill(Path(roundedRect: r, cornerRadius: 3), with: .color(.white.opacity(0.9)))
+                layer.fill(Path(CGRect(x: r.minX, y: r.minY, width: r.width, height: 6)), with: .color(Color(white: 0.86)))
+            }
+            let label = Text(second ? "Desktop 2" : "Desktop 1").font(.system(size: 9, weight: .semibold)).foregroundColor(.white)
+            layer.draw(label, at: CGPoint(x: screen.minX + 8, y: screen.maxY - 8), anchor: .bottomLeading)
+        }
+        context.stroke(shape, with: .color(ink.opacity(0.2)), lineWidth: 1)
+    }
+}

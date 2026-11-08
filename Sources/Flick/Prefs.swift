@@ -51,6 +51,7 @@ enum Prefs {
         var earlySwitch = true
         var layout = SpaceLayout()
         var swipeUp = false
+        var instantSpaces = true
         var reducedMotion = false
         var touchSwitch = true
         var touchSensitivity = 1.0
@@ -61,7 +62,7 @@ enum Prefs {
         "holdKey": 0, "delayMs": 0, "currentSpaceOnly": true, "showMinimized": true, "showHidden": true,
         "thumbnails": true, "titles": true, "appIcons": true, "tileSize": 1.0, "corners": 24.0,
         "clearGlass": true, "useTint": false, "tint": "0.0,0.0,0.0,0.25",
-        "useHighlight": false, "highlight": "0.0,0.48,1.0,1.0", "mainDisplay": false, "menuBarIcon": true, "earlySwitch": true, "swipeUp": false, "reducedMotion": false, "touchSwitch": true, "touchSensitivity": 1.0,
+        "useHighlight": false, "highlight": "0.0,0.48,1.0,1.0", "mainDisplay": false, "menuBarIcon": true, "earlySwitch": true, "swipeUp": false, "instantSpaces": true, "reducedMotion": false, "touchSwitch": true, "touchSensitivity": 1.0,
     ]
 
     /// Most self tests promise not to move focus, and early switching would.
@@ -104,6 +105,7 @@ enum Prefs {
         v.earlySwitch = testEarly ?? d.bool(forKey: "earlySwitch")
         v.swipeUp = ProcessInfo.processInfo.environment["FLICK_SWIPETEST"] != nil || d.bool(forKey: "swipeUp")
         v.swipeSign = d.integer(forKey: "swipeSign")
+        v.instantSpaces = d.bool(forKey: "instantSpaces")
         v.touchSwitch = d.bool(forKey: "touchSwitch")
         v.touchSensitivity = min(max(d.double(forKey: "touchSensitivity"), 0.5), 3)
         v.reducedMotion = ProcessInfo.processInfo.environment["FLICK_REDUCEDTEST"] != nil || d.bool(forKey: "reducedMotion")

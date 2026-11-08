@@ -1,4 +1,5 @@
 import Cocoa
+import os
 
 /// Moves between Spaces with no slide. Posts the same Dock swipe a trackpad would,
 /// with a near-zero distance and a huge velocity, so there's nothing to animate.
@@ -68,6 +69,10 @@ enum Spaces {
 
     static func visible() -> Set<UInt64> { Set(displays().map(\.current)) }
 
+    /// While Flick posts its own swipes, so Instant Spaces lets them through.
+    private static let postingUntil = OSAllocatedUnfairLock(initialState: UInt64(0))
+    static var isPosting: Bool { postingUntil.withLock { now() < $0 } }
+
     private static let isSupported: Bool = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
 
     private static var naturalScrolling: Bool {
@@ -114,7 +119,10 @@ enum Spaces {
         var sign: Double = right ? -1 : 1
         if !naturalScrolling { sign = -sign }
         let start = now()
-        for _ in 0..<abs(to - from) {
+        let steps = abs(to - from)
+        postingUntil.withLock { $0 = now() + UInt64(steps * 40 + 150) * 1_000_000 }
+        defer { postingUntil.withLock { $0 = now() + 150_000_000 } }
+        for _ in 0..<steps {
             for phase: Int64 in [1, 2, 4] {
                 guard post(phase: phase, sign: sign) else { return false }
                 // The Dock drops phases sent back to back on macOS 27. A dropped one meant
@@ -148,6 +156,18 @@ enum Spaces {
         guard release else { return }
         usleep(gap)
         _ = post(phase: 4, sign: sign, motion: 2, amount: amounts.last ?? 0, tap: .cghidEventTap)
+    }
+
+    /// For the self test: a sideways swipe between Spaces. No amounts is a quick flick
+    /// that only has a speed when the fingers lift.
+    static func postHorizontal(sign: Double, amounts: [Double] = [0.02, 0.08]) {
+        _ = post(phase: 1, sign: sign, motion: 1, amount: 0, tap: .cghidEventTap)
+        for amount in amounts {
+            usleep(8000)
+            _ = post(phase: 2, sign: sign, motion: 1, amount: amount, tap: .cghidEventTap)
+        }
+        usleep(8000)
+        _ = post(phase: 4, sign: sign, motion: 1, amount: amounts.last ?? 0, tap: .cghidEventTap)
     }
 
     private static func post(phase: Int64, sign: Double, motion: Int64 = 1, amount: Double = 0.000016, tap: CGEventTapLocation? = nil) -> Bool {

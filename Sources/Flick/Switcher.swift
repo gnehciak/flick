@@ -378,6 +378,27 @@ enum Focuser {
         }
     }
 
+    /// For the self test: where a step would go, instead of going there.
+    static var dryRun: ((Int, UInt64?) -> Void)?
+
+    /// Instant Spaces: the Space beside this one, on the display under the pointer. In
+    /// the queue with every other jump, so quick swipes in a row each go one further.
+    static func step(_ delta: Int) {
+        q.async {
+            let all = Spaces.displays()
+            let under = Priv.displayUnderCursor()
+            guard let display = all.first(where: { $0.id == under }) ?? all.first,
+                  let i = display.spaces.firstIndex(of: display.current) else { return }
+            let target = display.spaces.indices.contains(i + delta) ? display.spaces[i + delta] : nil
+            if let dryRun { dryRun(delta, target); return }
+            guard let target else { return }   // already at the first or last Space
+            let began = now()
+            let landed = Spaces.jump(to: target)
+            Log.write("instant spaces: \(landed ? "landed" : "missed") in \(String(format: "%.1f", ms(since: began)))ms")
+            Store.shared.spaceChanged()
+        }
+    }
+
     static func jump(to space: UInt64) {
         q.async {
             Spaces.jump(to: space)

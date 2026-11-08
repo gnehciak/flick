@@ -15,7 +15,7 @@ enum SettingsPage: Int, CaseIterable {
     static let width: CGFloat = 560
 
     var height: CGFloat {
-        [470, 650, 550, 580, 640, 610][rawValue]
+        [470, 650, 550, 810, 640, 610][rawValue]
     }
 
     var view: AnyView {
@@ -357,6 +357,10 @@ private struct WindowsPage: View {
 
 private struct SpacesPage: View {
     @AppStorage("reducedMotion") private var reducedMotion = false
+    @AppStorage("instantSpaces") private var instantSpaces = true
+    @State private var noSpaceSwipe = false
+    @State private var otherSwitcher: NSRunningApplication?
+    private static let instantSpaceSwitcher = "com.interversehq.InstantSpaceSwitcher"
 
     var body: some View {
         Form {
@@ -374,6 +378,23 @@ private struct SpacesPage: View {
                     Labelled("Reduced Motion", "The grid fades in and out instead of zooming.")
                 }
             }
+            Section {
+                Toggle(isOn: $instantSpaces) {
+                    Labelled("Instant Spaces", "Swiping between Spaces jumps straight there, with no slide.")
+                }
+                if instantSpaces {
+                    InstantPreview()
+                    if let other = otherSwitcher {
+                        Warning(text: "InstantSpaceSwitcher is running too. Flick does the same now.", button: "Quit It") {
+                            other.terminate()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { check() }
+                        }
+                    }
+                    if noSpaceSwipe {
+                        Warning(text: "Turn on swiping between full-screen apps.", button: "Trackpad Settings…", action: openTrackpadSettings)
+                    }
+                }
+            }
             Section("In the Grid") {
                 Tip(symbol: "hand.point.up.left", text: "Drag a window onto another Space to move it there.")
                 Tip(symbol: "cursorarrow.click", text: "Click an empty part of a Space to go to it.")
@@ -382,6 +403,13 @@ private struct SpacesPage: View {
         }
         .formStyle(.grouped)
         .toggleStyle(.switch)
+        .onAppear(perform: check)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in check() }
+    }
+
+    private func check() {
+        noSpaceSwipe = trackpadSetting("TrackpadThreeFingerHorizSwipeGesture") != 2 && trackpadSetting("TrackpadFourFingerHorizSwipeGesture") != 2
+        otherSwitcher = NSRunningApplication.runningApplications(withBundleIdentifier: Self.instantSpaceSwitcher).first
     }
 }
 
@@ -442,6 +470,7 @@ private struct GesturesPage: View {
                     }
                 }
             }
+
         }
         .formStyle(.grouped)
         .toggleStyle(.switch)
@@ -455,16 +484,20 @@ private struct GesturesPage: View {
     }
 
     /// The built-in trackpad's setting, or a Magic Trackpad's.
-    private static func trackpad(_ key: String) -> Int {
-        for domain in ["com.apple.AppleMultitouchTrackpad", "com.apple.driver.AppleBluetoothMultitouch.trackpad"] {
-            if let value = CFPreferencesCopyAppValue(key as CFString, domain as CFString) as? Int { return value }
-        }
-        return 0
-    }
+    private static func trackpad(_ key: String) -> Int { trackpadSetting(key) }
+    private static func openTrackpad() { openTrackpadSettings() }
+}
 
-    private static func openTrackpad() {
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Trackpad-Settings.extension")!)
+/// The built-in trackpad's setting, or a Magic Trackpad's.
+private func trackpadSetting(_ key: String) -> Int {
+    for domain in ["com.apple.AppleMultitouchTrackpad", "com.apple.driver.AppleBluetoothMultitouch.trackpad"] {
+        if let value = CFPreferencesCopyAppValue(key as CFString, domain as CFString) as? Int { return value }
     }
+    return 0
+}
+
+private func openTrackpadSettings() {
+    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Trackpad-Settings.extension")!)
 }
 
 // MARK: About
