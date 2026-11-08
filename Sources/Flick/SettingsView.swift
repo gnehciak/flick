@@ -15,7 +15,7 @@ enum SettingsPage: Int, CaseIterable {
     static let width: CGFloat = 560
 
     var height: CGFloat {
-        [470, 650, 550, 580, 640, 560][rawValue]
+        [470, 650, 550, 580, 640, 610][rawValue]
     }
 
     var view: AnyView {
@@ -37,7 +37,7 @@ private var flick: AppDelegate? { NSApp.delegate as? AppDelegate }
 /// Where Flick lives online. Empty hides the button.
 enum Links {
     static let coffee = URL(string: "")
-    static let source = URL(string: "")
+    static let source = URL(string: "https://github.com/gnehciak/flick")
 }
 
 /// A setting's name with a line under it saying what it does, as System Settings has.

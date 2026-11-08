@@ -465,7 +465,7 @@ footer p { margin: 4px 0; }
 
 <script>
 // Fill these in at launch. Until then the buttons show as unavailable.
-const site = { download: "", source: "", coffee: "" };
+const site = { download: "", source: "https://github.com/gnehciak/flick", coffee: "" };
 document.querySelectorAll("[data-link]").forEach(el => {
   const url = site[el.dataset.link];
   if (url) el.href = url; else { el.setAttribute("aria-disabled", "true"); el.title = "Coming soon"; }
