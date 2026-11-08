@@ -1,5 +1,6 @@
 #!/bin/bash
 # Builds Flick.app. Pass --install to copy it into /Applications and start it.
+# UNIVERSAL=1 builds for Apple silicon and Intel together, as release.sh does.
 #
 # Signed with a local key kept in .signing, not ad hoc. macOS ties Accessibility and
 # Screen Recording to the signature, so a stable key means rebuilds keep both.
@@ -55,7 +56,15 @@ if [ ! -f assets/AppIcon.icns ]; then
     iconutil -c icns "$ICONSET" -o assets/AppIcon.icns
 fi
 
-swiftc -O -wmo -sdk "$SDK" -target "$TARGET" Sources/Flick/*.swift -o build/Flick
+if [ "${UNIVERSAL:-}" = 1 ]; then
+    # Apple silicon and Intel in one app, for releases.
+    for arch in arm64 x86_64; do
+        swiftc -O -wmo -sdk "$SDK" -target "$arch-apple-macosx13.0" Sources/Flick/*.swift -o "build/Flick-$arch"
+    done
+    lipo -create build/Flick-arm64 build/Flick-x86_64 -output build/Flick
+else
+    swiftc -O -wmo -sdk "$SDK" -target "$TARGET" Sources/Flick/*.swift -o build/Flick
+fi
 
 APP="build/Flick.app"
 rm -rf "$APP"
