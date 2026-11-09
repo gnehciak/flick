@@ -647,6 +647,25 @@ final class SelfTest {
         touch.finish(cancel: true)
         usleep(150_000)
 
+        // The pointer moving mid-swipe, as it does when a finger slips, mustn't pull the
+        // selection back. With the keys it still selects.
+        swipe([(0.4, 0.5), (0.43, 0.5), (0.46, 0.5), (0.5, 0.5), (0.56, 0.5)])
+        usleep(80_000)
+        let swiped = Switcher.shared.selectedIndex
+        let other = swiped == 0 ? 2 : 0
+        DispatchQueue.main.sync { Overlay.shared.testHover(over: other) }
+        usleep(60_000)
+        say("pointer over tile \(other) mid-swipe: selection stays at \(swiped): \(Switcher.shared.selectedIndex == swiped)")
+        touch.finish(cancel: true)
+        usleep(150_000)
+        Switcher.shared.press(reverse: false, at: now())
+        usleep(200_000)
+        DispatchQueue.main.sync { Overlay.shared.testHover(over: 2) }
+        usleep(60_000)
+        say("with ⌘Tab the pointer still selects: \(Switcher.shared.selectedIndex == 2)")
+        Switcher.shared.cancel()
+        usleep(150_000)
+
         // A finger dropping out for a moment on a slow swipe mustn't end the switch.
         let fingers = UnsafeMutableRawPointer.allocate(byteCount: 96 * 4, alignment: 8)
         defer { fingers.deallocate() }

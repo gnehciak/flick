@@ -548,6 +548,19 @@ final class Overlay {
         host.layer?.addSublayer(selection)
     }
 
+    /// For the self test: the pointer moving onto tile `i`, as the mouse would.
+    func testHover(over i: Int) {
+        guard tiles.indices.contains(i) else { return }
+        let f = tiles[i].root.frame
+        let point = host.convert(CGPoint(x: f.midX, y: f.midY), to: nil)
+        host.disarmMouse()
+        if let event = NSEvent.mouseEvent(with: .mouseMoved, location: point, modifierFlags: [], timestamp: 0,
+                                          windowNumber: panel.windowNumber, context: nil, eventNumber: 0,
+                                          clickCount: 0, pressure: 0) {
+            host.mouseMoved(with: event)
+        }
+    }
+
     func select(_ index: Int) {
         self.index = index
         CATransaction.begin()
@@ -1133,6 +1146,7 @@ final class HostView: NSView {
     /// The cursor may already be over a tile when the switcher opens. Only a real
     /// move should change the selection.
     func armMouse() { armedAt = NSEvent.mouseLocation }
+    func disarmMouse() { armedAt = nil }
 
     override func updateTrackingAreas() {
         if let tracking { removeTrackingArea(tracking) }
@@ -1143,6 +1157,9 @@ final class HostView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        // Three fingers are choosing. A slow swipe often lets one finger slip, and the
+        // rest then move the pointer: it mustn't pull the selection back to itself.
+        if Switcher.shared.isTouching { return }
         if let armedAt, hypot(NSEvent.mouseLocation.x - armedAt.x, NSEvent.mouseLocation.y - armedAt.y) < 3 { return }
         armedAt = nil
         if let i = hitTiles?(convert(event.locationInWindow, from: nil)) { Switcher.shared.select(i) }
