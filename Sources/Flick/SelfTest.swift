@@ -666,6 +666,21 @@ final class SelfTest {
         Switcher.shared.cancel()
         usleep(150_000)
 
+        // The pointer is held while three fingers choose, and let go however it ends.
+        swipe([(0.4, 0.5), (0.43, 0.5), (0.46, 0.5), (0.5, 0.5)])
+        usleep(80_000)
+        say("pointer held mid-swipe: \(touch.isHoldingPointer)")
+        touch.finish(cancel: true)
+        usleep(80_000)
+        say("let go on lifting: \(!touch.isHoldingPointer)")
+        swipe([(0.4, 0.5), (0.43, 0.5), (0.46, 0.5), (0.5, 0.5)])
+        usleep(80_000)
+        Switcher.shared.cancel()
+        usleep(500_000)
+        say("let go after Esc with the fingers still down: \(!touch.isHoldingPointer)")
+        touch.finish(cancel: true)
+        usleep(150_000)
+
         // A finger dropping out for a moment on a slow swipe mustn't end the switch.
         let fingers = UnsafeMutableRawPointer.allocate(byteCount: 96 * 4, alignment: 8)
         defer { fingers.deallocate() }

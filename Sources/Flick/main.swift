@@ -28,6 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
 
         NativeSwitcherGuard.install()
+        // A force quit mid-swipe skips every handler. Starting again frees the pointer.
+        CGAssociateMouseAndMouseCursorPosition(1)
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Answers ⌘Tab")
 
         Prefs.start()

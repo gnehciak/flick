@@ -32,6 +32,34 @@ final class TouchSwipe {
 
     /// How slanted a swipe can be and still count as sideways: up to about 50°.
     private static let slant = 0.8
+    /// The pointer stays put while three fingers choose. macOS still reads the fingers
+    /// too, and one that slips or lands first would nudge it.
+    private let pointerHeld = OSAllocatedUnfairLock(initialState: false)
+    var isHoldingPointer: Bool { pointerHeld.withLock { $0 } }
+    private static let testing = ProcessInfo.processInfo.environment["FLICK_SELFTEST"] != nil
+
+    private func holdPointer(_ on: Bool) {
+        let changed = pointerHeld.withLock { held -> Bool in
+            guard held != on else { return false }
+            held = on
+            return true
+        }
+        guard changed else { return }
+        DispatchQueue.main.async { [self] in
+            // Tests use made-up fingers, so the real pointer is left alone.
+            if !Self.testing { CGAssociateMouseAndMouseCursorPosition(on ? 0 : 1) }
+            if on { watchPointer() }
+        }
+    }
+
+    /// Esc or a click can end the switch with the fingers still down. Let go then too.
+    private func watchPointer() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [self] in
+            guard isHoldingPointer else { return }
+            if Switcher.shared.isTouching { watchPointer() } else { holdPointer(false) }
+        }
+    }
+
     /// How long a changed finger count must last to end the gesture, in ms.
     private static let liftAfter = 80.0, cancelAfter = 40.0
     private var offSince: UInt64 = 0                      // touch thread only
@@ -123,6 +151,7 @@ final class TouchSwipe {
                 engaged = Switcher.shared.pressTouch(reverse: dx < 0)
                 lastStep = x
                 setSideways(engaged)
+                if engaged { holdPointer(true) }
                 Log.write("touch: switcher opened \(dx < 0 ? "backwards" : "forwards")")
             } else if abs(dy) > max(engage, 0.04), abs(dy) > abs(dx) * 1.25 {
                 ignored = true          // clearly up or down: Swipe Up or the system's, not this
@@ -142,6 +171,7 @@ final class TouchSwipe {
             engaged = false
             ignored = false
             setSideways(false)
+            holdPointer(false)
         }
         guard engaged, Switcher.shared.isTouching else { return }
         if cancel { Switcher.shared.cancel() } else { Switcher.shared.commit() }

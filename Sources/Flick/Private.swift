@@ -183,7 +183,11 @@ enum Priv {
 
 /// Restores the system switcher however the app goes down, so ⌘Tab is never left dead.
 enum NativeSwitcherGuard {
-    private static func restore() { Priv.nativeSwitcher(enabled: true) }
+    /// The system ⌘Tab back, and the pointer free if a three-finger switch was holding it.
+    private static func restore() {
+        Priv.nativeSwitcher(enabled: true)
+        CGAssociateMouseAndMouseCursorPosition(1)
+    }
 
     static func install() {
         atexit { NativeSwitcherGuard.restoreFromC() }
