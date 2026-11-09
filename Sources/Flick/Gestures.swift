@@ -31,8 +31,15 @@ final class GestureTap: Thread {
 
     var isEnabled: Bool { tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false }
 
+    /// Also on for Three Finger Switch, so a slanted sideways swipe can't set off the
+    /// up and down gesture halfway through a switch.
+    private static var wanted: Bool {
+        let p = Prefs.current
+        return p.swipeUp || p.instantSpaces || p.touchSwitch
+    }
+
     func apply() {
-        let on = (Prefs.current.swipeUp || Prefs.current.instantSpaces) && KeyTap.shared.isRunning
+        let on = Self.wanted && KeyTap.shared.isRunning
         if on, !began {
             began = true
             name = "flick.gestures"
@@ -59,7 +66,7 @@ final class GestureTap: Thread {
     private func handle(_ proxy: CGEventTapProxy, _ type: UInt32, _ event: CGEvent) -> Unmanaged<CGEvent>? {
         let pass = Unmanaged.passUnretained(event)
         if type == CGEventType.tapDisabledByTimeout.rawValue || type == CGEventType.tapDisabledByUserInput.rawValue {
-            if let tap, Prefs.current.swipeUp || Prefs.current.instantSpaces { CGEvent.tapEnable(tap: tap, enable: true) }
+            if let tap, Self.wanted { CGEvent.tapEnable(tap: tap, enable: true) }
             return pass
         }
         guard let get = Priv.getI, let getD = Priv.getD else { return pass }
@@ -70,8 +77,11 @@ final class GestureTap: Thread {
         if kind == Self.gesture { return mode == .idle && !sideways ? pass : nil }
         guard get(event, Self.hidType) == 23 else { return pass }
         let motion = get(event, Self.motion)
-        if motion == 1 || sideways { return across(event, phase: get(event, Self.phase), getD) }
-        guard motion == 2, Prefs.current.swipeUp || mode != .idle else { return pass }
+        if motion == 1 || sideways {
+            if get(event, Self.phase) == 1 { Log.write("instant spaces: swipe begins, from pid \(get(event, Self.source))") }
+            return across(event, phase: get(event, Self.phase), getD)
+        }
+        guard motion == 2, Prefs.current.swipeUp || mode != .idle || sidewaysSwitch else { return pass }
 
         switch get(event, Self.phase) {
         case 1:
@@ -167,7 +177,20 @@ final class GestureTap: Thread {
 
     /// Which sign means up isn't documented, so the first swipe after turning this on
     /// settles it.
+    /// Three fingers already switching windows sideways.
+    private var sidewaysSwitch: Bool { Switcher.shared.isTouching || TouchSwipe.shared.isSideways }
+
     private func decide(_ sign: Int) {
+        if sidewaysSwitch {
+            // The up or down part of a slanted sideways swipe: not a gesture of its own.
+            Log.write("swipe: ignored, three fingers are switching sideways")
+            mode = .swallow
+            return
+        }
+        guard Prefs.current.swipeUp else {
+            mode = .idle        // handed back whole, for Mission Control
+            return
+        }
         let learned = Prefs.current.swipeSign
         up = learned == 0 ? sign : learned
         level = 0

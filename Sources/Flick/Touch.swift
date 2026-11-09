@@ -1,4 +1,5 @@
 import Cocoa
+import os
 
 /// Three fingers sideways switches windows, as on Windows. A quick swipe goes to the
 /// previous window; keep the fingers down and the switcher opens, and moving them moves
@@ -22,6 +23,18 @@ final class TouchSwipe {
     // Gesture state: touch thread only.
     private var tracking = false, engaged = false, ignored = false
     private var startX = 0.0, startY = 0.0, lastStep = 0.0
+
+    /// Three fingers moving mostly sideways, or a switch they started. The up and down
+    /// gesture leaves those alone, as a slanted swipe also moves a little up or down.
+    private let sidewaysState = OSAllocatedUnfairLock(initialState: false)
+    var isSideways: Bool { sidewaysState.withLock { $0 } }
+    private func setSideways(_ on: Bool) { sidewaysState.withLock { $0 = on } }
+
+    /// How slanted a swipe can be and still count as sideways: up to about 50°.
+    private static let slant = 0.8
+    /// How long a changed finger count must last to end the gesture, in ms.
+    private static let liftAfter = 80.0, cancelAfter = 40.0
+    private var offSince: UInt64 = 0                      // touch thread only
 
     /// Fraction of the trackpad's width, at normal sensitivity. Higher sensitivity needs less.
     static let engageAt = 0.06, stepAt = 0.09
@@ -65,9 +78,22 @@ final class TouchSwipe {
     /// Called for every frame of touches, about 90 a second while anything touches the pad.
     func frame(_ data: UnsafeMutableRawPointer?, count: Int) {
         guard count == 3, let data else {
-            finish(cancel: count > 3)
+            // All fingers off: switch now. A finger that drops out for a moment, or a
+            // fourth that brushes the pad, is common on a slow swipe: only a count that
+            // stays changed ends it, or it would switch and reopen over and over.
+            if count == 0 || !tracking {
+                offSince = 0
+                finish(cancel: false)
+                return
+            }
+            if offSince == 0 { offSince = now() }
+            if ms(since: offSince) >= (count > 3 ? Self.cancelAfter : Self.liftAfter) {
+                offSince = 0
+                finish(cancel: count > 3)
+            }
             return
         }
+        offSince = 0
         var x = 0.0, y = 0.0
         for i in 0..<3 {
             let px = Double(data.load(fromByteOffset: i * Self.stride + Self.positionOffset, as: Float.self))
@@ -91,12 +117,16 @@ final class TouchSwipe {
         guard !ignored else { return }
         let dx = x - startX, dy = y - startY
         if !engaged {
-            if abs(dy) > engage, abs(dy) > abs(dx) {
-                ignored = true          // up or down: Swipe Up or the system's, not this
-            } else if abs(dx) > engage, abs(dx) > abs(dy) * 1.5 {
+            let mostlySideways = abs(dx) >= abs(dy) * Self.slant
+            setSideways(mostlySideways && abs(dx) > 0.015)
+            if abs(dx) > engage, mostlySideways {
                 engaged = Switcher.shared.pressTouch(reverse: dx < 0)
                 lastStep = x
+                setSideways(engaged)
                 Log.write("touch: switcher opened \(dx < 0 ? "backwards" : "forwards")")
+            } else if abs(dy) > max(engage, 0.04), abs(dy) > abs(dx) * 1.25 {
+                ignored = true          // clearly up or down: Swipe Up or the system's, not this
+                setSideways(false)
             }
             return
         }
@@ -111,6 +141,7 @@ final class TouchSwipe {
             tracking = false
             engaged = false
             ignored = false
+            setSideways(false)
         }
         guard engaged, Switcher.shared.isTouching else { return }
         if cancel { Switcher.shared.cancel() } else { Switcher.shared.commit() }

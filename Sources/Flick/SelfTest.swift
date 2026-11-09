@@ -404,8 +404,9 @@ final class SelfTest {
         say("a long swipe still moves one Space: \(describe(taken()))")
         // Anything not taken goes on to macOS, so nothing here is left untaken on purpose.
         d.set(false, forKey: "instantSpaces")
+        d.set(false, forKey: "touchSwitch")
         usleep(400_000)
-        say("both off, the tap is off too: \(!GestureTap.shared.isEnabled)")
+        say("every swipe option off, the tap is off too: \(!GestureTap.shared.isEnabled)")
         d.set(true, forKey: "instantSpaces")
         usleep(400_000)
         say("on again: \(GestureTap.shared.isEnabled)")
@@ -622,6 +623,54 @@ final class SelfTest {
         }
         UserDefaults.standard.removeObject(forKey: "touchSensitivity")
         usleep(250_000)
+
+        // A slanted swipe still counts as sideways, up to about 50°.
+        swipe([(0.4, 0.5), (0.43, 0.525), (0.46, 0.55), (0.5, 0.585)])
+        usleep(80_000)
+        let slantOpen = Switcher.shared.isActive
+        let slantBefore = Switcher.shared.selectedIndex
+        swipe([(0.56, 0.635), (0.62, 0.685), (0.68, 0.735)])
+        usleep(80_000)
+        say("40° slant: opens \(slantOpen), moves \(Switcher.shared.selectedIndex - slantBefore)")
+        // The up and down gesture that a slant also sets off mustn't end the switch.
+        Spaces.postVertical(sign: 1)
+        usleep(300_000)
+        say("up and down gesture mid-switch: still open \(Switcher.shared.isActive), touch \(Switcher.shared.isTouching), grid \(Switcher.shared.showingAll)")
+        Spaces.postVertical(sign: -1)
+        usleep(300_000)
+        say("the other way too: still open \(Switcher.shared.isActive)")
+        touch.finish(cancel: true)
+        usleep(150_000)
+        swipe([(0.5, 0.4), (0.52, 0.44), (0.54, 0.48), (0.56, 0.52), (0.58, 0.56)])
+        usleep(80_000)
+        say("60° is up or down, not sideways: open \(Switcher.shared.isActive), want false")
+        touch.finish(cancel: true)
+        usleep(150_000)
+
+        // A finger dropping out for a moment on a slow swipe mustn't end the switch.
+        let fingers = UnsafeMutableRawPointer.allocate(byteCount: 96 * 4, alignment: 8)
+        defer { fingers.deallocate() }
+        func frames(_ count: Int, at x: Double, for length: Double) {
+            for i in 0..<4 {
+                fingers.storeBytes(of: Float(x + Double(i) * 0.02), toByteOffset: i * 96 + 32, as: Float.self)
+                fingers.storeBytes(of: Float(0.5), toByteOffset: i * 96 + 36, as: Float.self)
+            }
+            let began = now()
+            repeat { touch.frame(fingers, count: count); usleep(11_000) } while ms(since: began) < length
+        }
+        for x in stride(from: 0.4, through: 0.52, by: 0.01) { frames(3, at: x, for: 0) }
+        let slowOpen = Switcher.shared.isActive
+        frames(2, at: 0.52, for: 35)
+        frames(3, at: 0.53, for: 30)
+        say("slow swipe, a finger drops out for 35 ms: opened \(slowOpen), still open \(Switcher.shared.isActive)")
+        frames(4, at: 0.53, for: 20)
+        frames(3, at: 0.54, for: 30)
+        say("a fourth finger brushes for 20 ms: still open \(Switcher.shared.isActive)")
+        frames(4, at: 0.54, for: 80)
+        usleep(100_000)
+        say("a fourth finger that stays: cancelled \(!Switcher.shared.isActive)")
+        touch.finish(cancel: true)
+        usleep(150_000)
 
         // ⌘ released while three fingers hold the switcher mustn't end it.
         swipe([(0.5, 0.5), (0.55, 0.5), (0.6, 0.5)])
