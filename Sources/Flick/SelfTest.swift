@@ -415,6 +415,46 @@ final class SelfTest {
         if let original = display?.current, now != original { Spaces.jump(to: original) }
     }
 
+    /// The outline follows the pointer in the grid opened the way a swipe opens it, with
+    /// no mouse moves from macOS at all: made-up pointer positions, the real one untouched.
+    private func hoverTest() {
+        let waited = now()
+        while Store.shared.snapshot.count < 3, ms(since: waited) < 8000 { usleep(100_000) }
+        usleep(500_000)
+        var fake = NSPoint.zero
+        let lock = NSLock()
+        DispatchQueue.main.sync {
+            fake = NSEvent.mouseLocation
+            Overlay.shared.pointerSource = { lock.lock(); defer { lock.unlock() }; return fake }
+        }
+        defer { DispatchQueue.main.sync { Overlay.shared.pointerSource = { NSEvent.mouseLocation } } }
+        func point(at i: Int) {
+            let p = DispatchQueue.main.sync { Overlay.shared.tileCenterOnScreen(i) }
+            lock.lock(); fake = p ?? fake; lock.unlock()
+            usleep(120_000)
+        }
+        for (name, open) in [("grid, as a swipe opens it", { self.say("openGrid gave \(Switcher.shared.openGrid(following: false))") }),
+                             ("⌘Tab switcher", { Switcher.shared.press(reverse: false, at: now()) })] {
+            say("\(name): active before \(Switcher.shared.isActive)")
+            open()
+            usleep(700_000)
+            say("\(name): active \(Switcher.shared.isActive), all \(Switcher.shared.showingAll), selected \(Switcher.shared.selectedIndex)")
+            let count = Switcher.shared.openItems.count
+            guard count >= 3 else { say("\(name): only \(count) windows"); Switcher.shared.cancel(); continue }
+            let start = Switcher.shared.selectedIndex
+            point(at: start)
+            say("\(name): pointer resting where it opened leaves \(start): \(Switcher.shared.selectedIndex == start)")
+            point(at: 2)
+            let first = Switcher.shared.selectedIndex
+            point(at: count - 1)
+            say("\(name): follows the pointer to 2 then \(count - 1): \(first == 2 && Switcher.shared.selectedIndex == count - 1) (got \(first), \(Switcher.shared.selectedIndex); centre of 2 \(DispatchQueue.main.sync { Overlay.shared.tileCenterOnScreen(2) }.map { "\(Int($0.x)),\(Int($0.y))" } ?? "-"), watching \(DispatchQueue.main.sync { Overlay.shared.isWatchingPointer }), hit \(DispatchQueue.main.sync { Overlay.shared.testHit(2) }))")
+            Switcher.shared.cancel()
+            usleep(400_000)
+        }
+        let idle = DispatchQueue.main.sync { Overlay.shared.isWatchingPointer }
+        say("stops watching once closed: \(!idle)")
+    }
+
     private func swipeTest() {
         let d = UserDefaults.standard
         let learned = d.object(forKey: "swipeSign")
@@ -1305,6 +1345,7 @@ final class SelfTest {
         if ProcessInfo.processInfo.environment["FLICK_REDUCEDTEST"] != nil { reducedTest(); return }
         if ProcessInfo.processInfo.environment["FLICK_SWIPETEST"] != nil { swipeTest(); return }
         if ProcessInfo.processInfo.environment["FLICK_INSTANTTEST"] != nil { instantTest(); return }
+        if ProcessInfo.processInfo.environment["FLICK_HOVERTEST"] != nil { hoverTest(); return }
         if let prefix = ProcessInfo.processInfo.environment["FLICK_OPENTEST"] { openTest(prefix); return }
         if ProcessInfo.processInfo.environment["FLICK_BENCH"] != nil {
             sleep(4)

@@ -580,6 +580,45 @@ final class Overlay {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: work)
     }
 
+    /// While it's on screen the switcher follows the pointer. macOS often doesn't send
+    /// mouse moves to a window of an app that isn't active, as after a swipe opens the
+    /// grid, so it reads the pointer itself while it's up, and costs nothing when it isn't.
+    private var pointerWatch: Timer?
+    private var lastPointer = NSPoint.zero
+    var isWatchingPointer: Bool { pointerWatch != nil }
+    func testHit(_ i: Int) -> String {
+        guard let p = tileCenterOnScreen(i) else { return "none" }
+        let local = host.convert(panel.convertPoint(fromScreen: p), from: nil)
+        return "\(tileIndex(at: local).map(String.init) ?? "nil") grid \(showingGrid) shown \(shown) ignores \(panel.ignoresMouseEvents)"
+    }
+    /// For the self test: where the pointer is.
+    var pointerSource: () -> NSPoint = { NSEvent.mouseLocation }
+
+    private func takeMouse(_ on: Bool) {
+        panel.ignoresMouseEvents = !on
+        pointerWatch?.invalidate()
+        pointerWatch = nil
+        guard on else { return }
+        lastPointer = pointerSource()
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let point = self.pointerSource()
+            guard point != self.lastPointer else { return }
+            self.lastPointer = point
+            self.host.pointerMoved(toScreen: point)
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pointerWatch = timer
+    }
+
+    /// For the self test: the middle of tile `i`, on screen.
+    func tileCenterOnScreen(_ i: Int) -> NSPoint? {
+        guard tiles.indices.contains(i) else { return nil }
+        let f = tiles[i].root.frame
+        let inWindow = host.convert(CGPoint(x: f.midX, y: f.midY), to: nil)
+        return panel.convertPoint(toScreen: inWindow)
+    }
+
     func reveal(animated: Bool = false) {
         guard !items.isEmpty else { return }
         if animated {
@@ -589,7 +628,7 @@ final class Overlay {
         }
         shown = true
         host.armMouse()
-        panel.ignoresMouseEvents = false
+        takeMouse(true)
         panel.alphaValue = 1
         if showingGrid { requestBackdrop() }
         CATransaction.flush()
@@ -602,7 +641,7 @@ final class Overlay {
         dropSharpened()
         clearBackdrop()
         panel.alphaValue = 0
-        panel.ignoresMouseEvents = true
+        takeMouse(false)
         if showingGrid {
             tiles.forEach { $0.letGo() }
             // Back to the panel now, while nobody's waiting. Resizing from full screen took
@@ -868,7 +907,7 @@ final class Overlay {
         shown = true
         if showingGrid { requestBackdrop() }
         host.armMouse()
-        panel.ignoresMouseEvents = false
+        takeMouse(true)
     }
 
     /// Picking a window: the grid stays up while the switch happens behind it, and the
@@ -897,7 +936,7 @@ final class Overlay {
         Log.write("close started in \(String(format: "%.2f", ms(since: began)))ms, \(sharpened.count) sharp, opaque \(panel.isOpaque)")
         closing = true
         shown = false
-        panel.ignoresMouseEvents = true
+        takeMouse(false)
         endScrub(open: false, velocity: 0)
     }
 
@@ -915,7 +954,7 @@ final class Overlay {
         startTimeline(at: 1, into: nil, stayOpaque: true)
         closing = true
         shown = false
-        panel.ignoresMouseEvents = true
+        takeMouse(false)
         endScrub(open: false, velocity: 0)
     }
 
@@ -1145,7 +1184,7 @@ final class HostView: NSView {
 
     /// The cursor may already be over a tile when the switcher opens. Only a real
     /// move should change the selection.
-    func armMouse() { armedAt = NSEvent.mouseLocation }
+    func armMouse() { armedAt = Overlay.shared.pointerSource() }
     func disarmMouse() { armedAt = nil }
 
     override func updateTrackingAreas() {
@@ -1157,12 +1196,19 @@ final class HostView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        pointerMoved(toScreen: window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation)
+    }
+
+    /// From a mouse move, or the overlay's own check of where the pointer is.
+    func pointerMoved(toScreen point: NSPoint) {
         // Three fingers are choosing. A slow swipe often lets one finger slip, and the
         // rest then move the pointer: it mustn't pull the selection back to itself.
         if Switcher.shared.isTouching { return }
-        if let armedAt, hypot(NSEvent.mouseLocation.x - armedAt.x, NSEvent.mouseLocation.y - armedAt.y) < 3 { return }
+        if let armedAt, hypot(point.x - armedAt.x, point.y - armedAt.y) < 3 { return }
         armedAt = nil
-        if let i = hitTiles?(convert(event.locationInWindow, from: nil)) { Switcher.shared.select(i) }
+        guard let window else { return }
+        let local = convert(window.convertPoint(fromScreen: point), from: nil)
+        if let i = hitTiles?(local), i != Switcher.shared.selectedIndex { Switcher.shared.select(i) }
     }
 
     override func mouseDragged(with event: NSEvent) { gridMouse?(.dragged, convert(event.locationInWindow, from: nil)) }
