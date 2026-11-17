@@ -273,6 +273,11 @@ final class Store {
         let alive = Set(items.map(\.id))
         homes = homes.filter { alive.contains($0.key) }
         let found = items, front0 = frontWindow
+        // An app that reports its own focus has already said which of its windows is in
+        // front. The z-order here includes other Spaces and isn't reliably front to back:
+        // it named Chrome's other window, moving it ahead of the one just picked.
+        let frontReportsFocus = trackers[front].map { !$0.axUnavailable } ?? false
+        let owner = Dictionary(found.map { ($0.id, $0.pid) }, uniquingKeysWith: { first, _ in first })
         state.withLock { s in
             s.visible = visible
             s.spaces = spaceList
@@ -281,7 +286,10 @@ final class Store {
             let inMRU = Set(s.mru)
             s.mru.append(contentsOf: found.map(\.id).filter { !inMRU.contains($0) })
             // The z-order is the backstop for apps that don't report focus changes.
-            if let front0, now() &- s.lastCommit > 400_000_000, let i = s.mru.firstIndex(of: front0), i != 0 {
+            let appAlreadyFirst = s.mru.first.flatMap { owner[$0] } == front
+            if let front0, now() &- s.lastCommit > 400_000_000, let i = s.mru.firstIndex(of: front0), i != 0,
+               !(frontReportsFocus && appAlreadyFirst) {
+                Log.write("order: \(Self.name(front0, in: found)) to the front, it's the front app's top window (was \(i))")
                 s.mru.remove(at: i)
                 s.mru.insert(front0, at: 0)
             }
@@ -322,12 +330,16 @@ final class Store {
     /// one you picked. So it counts once nothing newer has come in for a moment.
     func focused(_ id: CGWindowID) {
         let arrived = now()
+        Log.write("order: \(Self.name(id, in: snapshot)) reported focused")
         let token = state.withLock { s -> Int in
             s.focusToken += 1
             return s.focusToken
         }
         q.asyncAfter(deadline: .now() + Self.focusSettle) { [self] in
-            guard state.withLock({ $0.focusToken == token }) else { return }
+            guard state.withLock({ $0.focusToken == token }) else {
+                Log.write("order: \(Self.name(id, in: snapshot)) passed over, a newer report came in")
+                return
+            }
             if let left = promoteLocked(id, commit: false, pid: nil, at: arrived) { Thumbs.shared.refresh(left, after: 0.35) }
         }
     }
@@ -345,11 +357,18 @@ final class Store {
                 if let pid { s.frontPid = pid }
             } else {
                 let since = arrived &- s.lastCommit
-                if since < 150_000_000, s.mru.first != id { return nil }
+                if since < 150_000_000, s.mru.first != id {
+                    Log.write("order: \(Self.name(id, in: s.items)) ignored, just after a switch")
+                    return nil
+                }
                 // Another window of the app Flick just switched to: the app catching up.
                 if since < Self.afterCommit, id != s.committed,
-                   s.items.first(where: { $0.id == id })?.pid == s.committedPid { return nil }
+                   s.items.first(where: { $0.id == id })?.pid == s.committedPid {
+                    Log.write("order: \(Self.name(id, in: s.items)) ignored, the app catching up after a switch")
+                    return nil
+                }
             }
+            Log.write("order: \(Self.name(id, in: s.items)) to the front, \(commit ? "switched to" : "focused") (was \(s.mru.firstIndex(of: id).map(String.init) ?? "new"))")
             let previous = s.mru.first
             guard previous != id else { return nil }
             s.mru.removeAll { $0 == id }
@@ -360,6 +379,12 @@ final class Store {
             }
             return previous
         }
+    }
+
+    /// For the log: which window, by app and title.
+    static func name(_ id: CGWindowID, in items: [Item]) -> String {
+        guard let item = items.first(where: { $0.id == id }) else { return "window \(id)" }
+        return "\(item.appName) \"\(item.title.prefix(30))\" (\(id))"
     }
 
     /// For the self test: the order windows are in, to put back afterwards.

@@ -456,6 +456,25 @@ final class SelfTest {
         store.focused(a)
         usleep(400_000)
         say("a plain focus change still counts: \(show()), right \(order() == [a, o, b])")
+
+        // The window list's idea of the app's top window mustn't overrule the window that
+        // was picked, which is what put Chrome's other window back in front.
+        let list = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as NSArray? ?? []
+        var top: CGWindowID?
+        for case let w as NSDictionary in list where (w[kCGWindowLayer] as? Int) == 0 {
+            if let id = w[kCGWindowNumber] as? CGWindowID, id == a || id == b, (w[kCGWindowIsOnscreen] as? Bool) == true { top = id; break }
+        }
+        if let top {
+            let picked = top == a ? b : a
+            set([o, a, b])
+            store.committed(picked, pid: pair[0].pid)
+            usleep(600_000)
+            store.schedule(after: 0)
+            usleep(500_000)
+            say("the list says \(label[top]!) is on top, \(label[picked]!) was picked: \(show()), picked stays first \(order().first == picked)")
+        } else {
+            say("neither window of the app is on screen here, so the list check can't be tried")
+        }
     }
 
     /// The outline follows the pointer in the grid opened the way a swipe opens it, with
