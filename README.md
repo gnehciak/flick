@@ -116,6 +116,7 @@ Flick turns the system ⌘Tab off while it runs and restores it on quit, on sign
 | `FLICK_SELFTEST=<report> FLICK_RECORDTEST=<mov>` | Films a cold and a warm click on another Space. Takes over the screen. |
 | `FLICK_SELFTEST=<report> FLICK_TOUCHTEST=1` | The three finger gesture with made-up touches. Focus stays put. |
 | `FLICK_SELFTEST=<report> FLICK_HOVERTEST=1` | The outline following the pointer in the grid and the switcher, with made-up pointer positions. Focus stays put. |
+| `FLICK_SELFTEST=<report> FLICK_ORDERTEST=1` | Window order with two windows of one app, when the app names its other window for a moment. Needs an app with two windows open. Only reorders Flick's list, and puts it back. Focus stays put. |
 | `FLICK_SELFTEST=<report> FLICK_BENCH=1` | Refresh and capture times, memory. Doesn't move focus. |
 | `FLICK_SNAPSHOT=<png>` | Screenshots the overlay. Add `FLICK_ALLSPACES=1` for the Spaces view. |
 | `FLICK_SETTINGSHOT=<png>` | Screenshots each Settings tab to `<png>-<tab>.png`. Add `FLICK_SETTINGSTAB=<tab>` for one. |

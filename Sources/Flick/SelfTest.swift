@@ -415,6 +415,49 @@ final class SelfTest {
         if let original = display?.current, now != original { Spaces.jump(to: original) }
     }
 
+    /// The most-recent order with two windows of one app, when the app names its other
+    /// window for a moment on the way. Only Flick's list is reordered, and put back.
+    private func orderTest() {
+        let waited = now()
+        while Store.shared.snapshot.count < 3, ms(since: waited) < 8000 { usleep(100_000) }
+        let store = Store.shared
+        let items = store.snapshot
+        guard let pair = Dictionary(grouping: items, by: \.pid).values.first(where: { $0.count >= 2 }),
+              let other = items.first(where: { $0.pid != pair[0].pid }) else {
+            say("needs an app with two windows open"); return
+        }
+        let saved = store.testOrder
+        defer { store.testOrder = saved }
+        let a = pair[0].id, b = pair[1].id, o = other.id
+        let label = [a: "\(pair[0].appName) 1", b: "\(pair[1].appName) 2", o: other.appName]
+        func set(_ ids: [CGWindowID]) { store.testOrder = ids + saved.filter { !ids.contains($0) } }
+        func order() -> [CGWindowID] { store.testOrder.filter { [a, b, o].contains($0) } }
+        func show() -> String { order().map { label[$0] ?? "?" }.joined(separator: ", ") }
+
+        set([o, a, b])
+        store.committed(b, pid: pair[1].pid)
+        usleep(120_000); store.focused(a)
+        usleep(60_000); store.focused(b)
+        usleep(400_000)
+        say("Flick switches to \(label[b]!), the app names \(label[a]!) first: \(show()), right \(order() == [b, o, a])")
+
+        set([o, a, b])
+        store.committed(b, pid: pair[1].pid)
+        usleep(300_000); store.focused(a)
+        usleep(400_000)
+        say("a late report of the other window, alone: \(show()), right \(order() == [b, o, a])")
+
+        set([o, a, b])
+        store.focused(a); usleep(40_000); store.focused(b)
+        usleep(400_000)
+        say("a click on \(label[b]!), the app names \(label[a]!) for a moment: \(show()), right \(order() == [b, o, a])")
+
+        set([o, a, b])
+        store.focused(a)
+        usleep(400_000)
+        say("a plain focus change still counts: \(show()), right \(order() == [a, o, b])")
+    }
+
     /// The outline follows the pointer in the grid opened the way a swipe opens it, with
     /// no mouse moves from macOS at all: made-up pointer positions, the real one untouched.
     private func hoverTest() {
@@ -1354,6 +1397,7 @@ final class SelfTest {
         if ProcessInfo.processInfo.environment["FLICK_SWIPETEST"] != nil { swipeTest(); return }
         if ProcessInfo.processInfo.environment["FLICK_INSTANTTEST"] != nil { instantTest(); return }
         if ProcessInfo.processInfo.environment["FLICK_HOVERTEST"] != nil { hoverTest(); return }
+        if ProcessInfo.processInfo.environment["FLICK_ORDERTEST"] != nil { orderTest(); return }
         if let prefix = ProcessInfo.processInfo.environment["FLICK_OPENTEST"] { openTest(prefix); return }
         if ProcessInfo.processInfo.environment["FLICK_BENCH"] != nil {
             sleep(4)

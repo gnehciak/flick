@@ -38,6 +38,9 @@ final class Store {
         var mru: [CGWindowID] = []
         var frontPid: pid_t = 0
         var lastCommit: UInt64 = 0
+        var committed: CGWindowID = 0
+        var committedPid: pid_t = 0
+        var focusToken = 0
         var visible = Set<UInt64>()
         var activated: pid_t = 0
         var spaces: [Spaces.Info] = []
@@ -314,17 +317,38 @@ final class Store {
         if let left = promoteLocked(id, commit: true, pid: pid) { Thumbs.shared.refresh(left, after: 0.35) }
     }
 
+    /// An app said one of its windows took focus. Apps coming forward often name a window
+    /// for a moment before the right one: Chrome reports its last window first, then the
+    /// one you picked. So it counts once nothing newer has come in for a moment.
     func focused(_ id: CGWindowID) {
-        if let left = promoteLocked(id, commit: false, pid: nil) { Thumbs.shared.refresh(left, after: 0.35) }
+        let arrived = now()
+        let token = state.withLock { s -> Int in
+            s.focusToken += 1
+            return s.focusToken
+        }
+        q.asyncAfter(deadline: .now() + Self.focusSettle) { [self] in
+            guard state.withLock({ $0.focusToken == token }) else { return }
+            if let left = promoteLocked(id, commit: false, pid: nil, at: arrived) { Thumbs.shared.refresh(left, after: 0.35) }
+        }
     }
 
-    private func promoteLocked(_ id: CGWindowID, commit: Bool, pid: pid_t?) -> CGWindowID? {
+    private static let focusSettle = 0.15
+    /// After Flick switches, the app's own reports of its other windows are only noise.
+    private static let afterCommit: UInt64 = 600_000_000
+
+    private func promoteLocked(_ id: CGWindowID, commit: Bool, pid: pid_t?, at arrived: UInt64 = now()) -> CGWindowID? {
         state.withLock { s in
             if commit {
                 s.lastCommit = now()
+                s.committed = id
+                s.committedPid = pid ?? s.items.first(where: { $0.id == id })?.pid ?? 0
                 if let pid { s.frontPid = pid }
-            } else if now() &- s.lastCommit < 150_000_000, s.mru.first != id {
-                return nil
+            } else {
+                let since = arrived &- s.lastCommit
+                if since < 150_000_000, s.mru.first != id { return nil }
+                // Another window of the app Flick just switched to: the app catching up.
+                if since < Self.afterCommit, id != s.committed,
+                   s.items.first(where: { $0.id == id })?.pid == s.committedPid { return nil }
             }
             let previous = s.mru.first
             guard previous != id else { return nil }
@@ -335,6 +359,22 @@ final class Store {
                 s.items.insert(item, at: 0)
             }
             return previous
+        }
+    }
+
+    /// For the self test: the order windows are in, to put back afterwards.
+    var testOrder: [CGWindowID] {
+        get { state.withLock { $0.mru } }
+        set {
+            state.withLock { s in
+                s.mru = newValue
+                var rank: [CGWindowID: Int] = [:]
+                for (i, id) in newValue.enumerated() { rank[id] = i }
+                s.items.sort { (rank[$0.id] ?? .max) < (rank[$1.id] ?? .max) }
+                s.lastCommit = 0
+                s.committed = 0
+                s.committedPid = 0
+            }
         }
     }
 
