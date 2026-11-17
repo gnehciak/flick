@@ -178,6 +178,7 @@ final class Switcher {
             guard !s.active else { return nil }
             s.all = true
             s.sticky = true
+            s.touch = false     // a three-finger switch before this one mustn't carry over
             s.active = true
             s.items = visibleItems(all: true)
             s.index = 0

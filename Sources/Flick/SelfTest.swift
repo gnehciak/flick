@@ -433,12 +433,20 @@ final class SelfTest {
             lock.lock(); fake = p ?? fake; lock.unlock()
             usleep(120_000)
         }
+        // As in real use: a three-finger switch first, which used to leave its mark on
+        // the next grid and make it ignore the pointer.
+        let fingers = TouchSwipe.shared
+        for p in [(0.4, 0.5), (0.43, 0.5), (0.46, 0.5), (0.5, 0.5)] { fingers.feed(x: p.0, y: p.1); usleep(11_000) }
+        usleep(80_000)
+        say("three-finger switch first: touch \(Switcher.shared.isTouching)")
+        fingers.finish(cancel: true)
+        usleep(300_000)
         for (name, open) in [("grid, as a swipe opens it", { self.say("openGrid gave \(Switcher.shared.openGrid(following: false))") }),
                              ("⌘Tab switcher", { Switcher.shared.press(reverse: false, at: now()) })] {
             say("\(name): active before \(Switcher.shared.isActive)")
             open()
             usleep(700_000)
-            say("\(name): active \(Switcher.shared.isActive), all \(Switcher.shared.showingAll), selected \(Switcher.shared.selectedIndex)")
+            say("\(name): active \(Switcher.shared.isActive), all \(Switcher.shared.showingAll), selected \(Switcher.shared.selectedIndex), thinks fingers drive it \(Switcher.shared.isTouching)")
             let count = Switcher.shared.openItems.count
             guard count >= 3 else { say("\(name): only \(count) windows"); Switcher.shared.cancel(); continue }
             let start = Switcher.shared.selectedIndex
